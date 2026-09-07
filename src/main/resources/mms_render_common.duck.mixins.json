@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "package": "info.mudbourn.mmsrendercommon.mixin.headhide",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "LivingEntityRenderStateMixin",
+    "LivingEntityRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

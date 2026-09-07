@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "package": "info.mudbourn.mmsrendercommon.mixin.cemrelay",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "HumanoidArmorLayerMixin",
+    "ModelPartChildrenAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
