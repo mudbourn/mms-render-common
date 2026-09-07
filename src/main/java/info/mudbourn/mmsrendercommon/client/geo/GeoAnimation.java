@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A parsed Bedrock animation, reduced to the one thing the ported furs use: per-bone
@@ -15,9 +16,10 @@ import java.util.Map;
  * <p>Only bone rotation tracks are read; Bedrock position and scale channels, and the
  * Molang expression forms of a keyframe, are ignored because no ported fur needs them.
  * A track is a list of keyframes sorted by time, sampled by {@link #rotationOf}, which
- * returns Euler degrees in Bedrock space for the baker's convention to mirror.
+ * returns Euler degrees in Bedrock space for the baker's convention to mirror. It loops
+ * on age alone and ignores the walk cycle, so a moving wearer swings no differently.
  */
-public final class GeoAnimation {
+public final class GeoAnimation implements BoneAnimator {
 
     /** One rotation keyframe: a time in seconds and the Euler degrees reached there. */
     private record Keyframe(float time, float[] vector, boolean easeInOut) {}
@@ -30,9 +32,14 @@ public final class GeoAnimation {
         this.tracks = tracks;
     }
 
-    /** Whether this animation drives the named bone. */
-    public boolean animates(String bone) {
-        return this.tracks.containsKey(bone);
+    @Override
+    public Set<String> animatedBones() {
+        return this.tracks.keySet();
+    }
+
+    @Override
+    public float[] rotation(String bone, float ageInTicks, float limbSwingPos, float limbSwingSpeed) {
+        return rotationOf(bone, ageInTicks / 20.0F);
     }
 
     /**
@@ -75,7 +82,8 @@ public final class GeoAnimation {
             for (Map.Entry<String, JsonElement> entry : animation.getAsJsonObject("bones").entrySet()) {
                 JsonObject bone = entry.getValue().getAsJsonObject();
                 if (bone.has("rotation")) {
-                    tracks.put(entry.getKey(), parseTrack(bone.getAsJsonObject("rotation")));
+                    tracks.put(BoneAnimator.canonicalBone(entry.getKey()),
+                            parseTrack(bone.getAsJsonObject("rotation")));
                 }
             }
         }

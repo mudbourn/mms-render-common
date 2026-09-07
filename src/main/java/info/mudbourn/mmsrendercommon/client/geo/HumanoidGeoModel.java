@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * A Bedrock geo model baked for drawing over a vanilla humanoid.
@@ -42,6 +43,17 @@ public final class HumanoidGeoModel {
      */
     private record AnimatedGroup(String bone, Vector3f pivot, List<Quad> quads) {}
 
+    /**
+     * Which skin the quads of a {@code _wide_only} / {@code _thin_only} bone belong to.
+     *
+     * <p>Bedrock CEM marks arm geometry that differs between the four-pixel default and
+     * three-pixel slim arm by suffixing the bone name: a {@code _wide_only} bone is drawn
+     * only on the default model, {@code _thin_only} only on slim, and every other bone
+     * ({@code ALWAYS}) on both. Honouring this is what keeps a slim skin from wearing the
+     * wide arm geometry (and vice versa).
+     */
+    private enum Variant { ALWAYS, WIDE_ONLY, THIN_ONLY }
+
     /** Vanilla humanoid part names, in draw order. */
     private static final String[] PARTS = {
             "head", "body", "right_arm", "left_arm", "right_leg", "left_leg"
@@ -63,15 +75,21 @@ public final class HumanoidGeoModel {
             "left_leg", new float[] {1.9F, 12.0F, 0.0F});
 
     private final Map<String, List<Quad>> quadsByPart;
+    private final Map<String, List<Quad>> wideQuadsByPart;
+    private final Map<String, List<Quad>> thinQuadsByPart;
     private final Map<String, List<AnimatedGroup>> animatedByPart;
-    private final GeoAnimation animation;
+    private final BoneAnimator animator;
 
     private HumanoidGeoModel(Map<String, List<Quad>> quadsByPart,
+                            Map<String, List<Quad>> wideQuadsByPart,
+                            Map<String, List<Quad>> thinQuadsByPart,
                             Map<String, List<AnimatedGroup>> animatedByPart,
-                            GeoAnimation animation) {
+                            BoneAnimator animator) {
         this.quadsByPart = quadsByPart;
+        this.wideQuadsByPart = wideQuadsByPart;
+        this.thinQuadsByPart = thinQuadsByPart;
         this.animatedByPart = animatedByPart;
-        this.animation = animation;
+        this.animator = animator;
     }
 
     /** Bakes a parsed model with no animation; every bone is static. */
@@ -82,17 +100,20 @@ public final class HumanoidGeoModel {
     /**
      * Bakes a parsed model, resolving each bone to a humanoid part by name.
      *
-     * <p>A bone the animation drives is baked into its own {@link AnimatedGroup} rather
+     * <p>A bone the animator drives is baked into its own {@link AnimatedGroup} rather
      * than the part's static list, so its swing can be applied about its pivot at draw
      * time; every other bone is flattened into the static list as before.
      */
-    public static HumanoidGeoModel bake(GeoModelData data, GeoAnimation animation) {
+    public static HumanoidGeoModel bake(GeoModelData data, BoneAnimator animator) {
+        Set<String> animatedBones = animator == null ? Set.of() : animator.animatedBones();
         Map<String, GeoModelData.Bone> byName = new HashMap<>();
         for (GeoModelData.Bone bone : data.bones()) {
             byName.put(bone.name(), bone);
         }
 
         Map<String, List<Quad>> quadsByPart = new HashMap<>();
+        Map<String, List<Quad>> wideQuadsByPart = new HashMap<>();
+        Map<String, List<Quad>> thinQuadsByPart = new HashMap<>();
         Map<String, List<AnimatedGroup>> animatedByPart = new HashMap<>();
         for (GeoModelData.Bone bone : data.bones()) {
             String part = resolvePart(bone, byName);
@@ -100,22 +121,90 @@ public final class HumanoidGeoModel {
                 continue;
             }
             float[] pivot = PIVOTS.get(part);
-            if (animation != null && animation.animates(bone.name())) {
+            String canonical = BoneAnimator.canonicalBone(bone.name());
+            if (animatedBones.contains(canonical)) {
                 List<Quad> quads = new ArrayList<>();
+                Matrix4f parentChain = boneChain(byName.get(bone.parent()), byName);
                 for (GeoModelData.Cube cube : bone.cubes()) {
-                    bakeCube(cube, pivot, data.textureWidth(), data.textureHeight(), quads);
+                    bakeCube(cube, parentChain, pivot,
+                            data.textureWidth(), data.textureHeight(), quads);
                 }
                 Vector3f bonePivot = pointToModelSpace(bone.pivot(), pivot);
                 animatedByPart.computeIfAbsent(part, key -> new ArrayList<>())
-                        .add(new AnimatedGroup(bone.name(), bonePivot, quads));
+                        .add(new AnimatedGroup(canonical, bonePivot, quads));
                 continue;
             }
-            List<Quad> quads = quadsByPart.computeIfAbsent(part, key -> new ArrayList<>());
+            Map<String, List<Quad>> target = switch (variantFor(bone, byName)) {
+                case WIDE_ONLY -> wideQuadsByPart;
+                case THIN_ONLY -> thinQuadsByPart;
+                case ALWAYS -> quadsByPart;
+            };
+            List<Quad> quads = target.computeIfAbsent(part, key -> new ArrayList<>());
+            Matrix4f boneMatrix = boneChain(bone, byName);
             for (GeoModelData.Cube cube : bone.cubes()) {
-                bakeCube(cube, pivot, data.textureWidth(), data.textureHeight(), quads);
+                bakeCube(cube, boneMatrix, pivot,
+                        data.textureWidth(), data.textureHeight(), quads);
             }
         }
-        return new HumanoidGeoModel(quadsByPart, animatedByPart, animation);
+        return new HumanoidGeoModel(quadsByPart, wideQuadsByPart, thinQuadsByPart,
+                animatedByPart, animator);
+    }
+
+    /**
+     * The skin variant a bone's geometry belongs to, following parent links.
+     *
+     * <p>A bone whose name (or any ancestor's) ends in {@code _wide_only} or
+     * {@code _thin_only} is tagged for that skin; everything else is {@code ALWAYS}. The
+     * chain is walked so cubes nested under a variant bone inherit its tag.
+     */
+    private static Variant variantFor(GeoModelData.Bone bone, Map<String, GeoModelData.Bone> byName) {
+        GeoModelData.Bone current = bone;
+        while (current != null) {
+            String name = current.name();
+            if (name.endsWith("_wide_only")) {
+                return Variant.WIDE_ONLY;
+            }
+            if (name.endsWith("_thin_only")) {
+                return Variant.THIN_ONLY;
+            }
+            current = current.parent() == null ? null : byName.get(current.parent());
+        }
+        return Variant.ALWAYS;
+    }
+
+    /**
+     * The composed Bedrock-space rotation a static bone inherits from its own chain.
+     *
+     * <p>Bedrock bones rotate their geometry (and their children's) about their pivot,
+     * and a child's rotation is authored relative to its parent. Blockbench writes every
+     * bone's origins and pivots in absolute coordinates, so the baker can flatten a bone
+     * by folding in the rotations of the bone and each ancestor up to — but not including
+     * — the biped part bone, whose own placement is the vanilla {@link ModelPart}'s job at
+     * draw time. Each link is applied about its pivot; the product is
+     * {@code R(root) * ... * R(bone)} so the outermost ancestor rotates last.
+     *
+     * <p>Returns {@code null} when nothing in the chain is rotated, which is the common
+     * case, so the flat hot path stays untouched.
+     */
+    private static Matrix4f boneChain(GeoModelData.Bone bone, Map<String, GeoModelData.Bone> byName) {
+        Matrix4f result = null;
+        GeoModelData.Bone current = bone;
+        while (current != null && !PART_BY_BONE.containsKey(current.name())) {
+            float[] r = current.rotation();
+            if (r != null) {
+                float[] p = current.pivot();
+                // Same mirrored convention as cubeRotation: X and Z angles negate, Y keeps.
+                Matrix4f link = new Matrix4f()
+                        .translate(p[0], p[1], p[2])
+                        .rotateZYX((float) Math.toRadians(-r[2]),
+                                (float) Math.toRadians(r[1]),
+                                (float) Math.toRadians(-r[0]))
+                        .translate(-p[0], -p[1], -p[2]);
+                result = result == null ? link : new Matrix4f(link).mul(result);
+            }
+            current = current.parent() == null ? null : byName.get(current.parent());
+        }
+        return result;
     }
 
     /**
@@ -127,7 +216,9 @@ public final class HumanoidGeoModel {
      * back immediately after each submit.
      */
     public void submit(PoseStack poseStack, SubmitNodeCollector collector, RenderType renderType,
-                       ModelPart root, int light, int overlay, int color, float timeSeconds) {
+                       ModelPart root, int light, int overlay, int color,
+                       float ageInTicks, float limbSwingPos, float limbSwingSpeed, boolean slim) {
+        Map<String, List<Quad>> variantByPart = slim ? this.thinQuadsByPart : this.wideQuadsByPart;
         poseStack.pushPose();
         root.translateAndRotate(poseStack);
         for (String part : PARTS) {
@@ -139,7 +230,13 @@ public final class HumanoidGeoModel {
                 collector.submitCustomGeometry(poseStack, renderType,
                         (pose, consumer) -> drawPart(pose, consumer, quads, light, overlay, color));
             }
-            submitAnimated(part, poseStack, collector, renderType, light, overlay, color, timeSeconds);
+            List<Quad> variantQuads = variantByPart.get(part);
+            if (variantQuads != null) {
+                collector.submitCustomGeometry(poseStack, renderType,
+                        (pose, consumer) -> drawPart(pose, consumer, variantQuads, light, overlay, color));
+            }
+            submitAnimated(part, poseStack, collector, renderType, light, overlay, color,
+                    ageInTicks, limbSwingPos, limbSwingSpeed);
             poseStack.popPose();
         }
         poseStack.popPose();
@@ -147,7 +244,7 @@ public final class HumanoidGeoModel {
 
     private void submitAnimated(String part, PoseStack poseStack, SubmitNodeCollector collector,
                                 RenderType renderType, int light, int overlay, int color,
-                                float timeSeconds) {
+                                float ageInTicks, float limbSwingPos, float limbSwingSpeed) {
         List<AnimatedGroup> groups = this.animatedByPart.get(part);
         if (groups == null) {
             return;
@@ -157,7 +254,7 @@ public final class HumanoidGeoModel {
             poseStack.pushPose();
             Vector3f pivot = group.pivot();
             poseStack.translate(pivot.x() / 16.0F, pivot.y() / 16.0F, pivot.z() / 16.0F);
-            poseStack.mulPose(swing(group.bone(), timeSeconds));
+            poseStack.mulPose(swing(group.bone(), ageInTicks, limbSwingPos, limbSwingSpeed));
             poseStack.translate(-pivot.x() / 16.0F, -pivot.y() / 16.0F, -pivot.z() / 16.0F);
             collector.submitCustomGeometry(poseStack, renderType,
                     (pose, consumer) -> drawPart(pose, consumer, quads, light, overlay, color));
@@ -168,14 +265,14 @@ public final class HumanoidGeoModel {
     /**
      * The bone's animated rotation as a part-local matrix.
      *
-     * <p>The track gives Bedrock Euler degrees; the model is drawn mirrored on X and Z,
+     * <p>The animator gives Bedrock Euler degrees; the model is drawn mirrored on X and Z,
      * so a Bedrock rotation appears here with its X and Z angles negated.
      */
-    private Matrix4f swing(String bone, float timeSeconds) {
-        if (this.animation == null) {
+    private Matrix4f swing(String bone, float ageInTicks, float limbSwingPos, float limbSwingSpeed) {
+        if (this.animator == null) {
             return new Matrix4f();
         }
-        float[] euler = this.animation.rotationOf(bone, timeSeconds);
+        float[] euler = this.animator.rotation(bone, ageInTicks, limbSwingPos, limbSwingSpeed);
         if (euler == null) {
             return new Matrix4f();
         }
@@ -228,7 +325,7 @@ public final class HumanoidGeoModel {
             "bipedRightLeg", "right_leg",
             "bipedLeftLeg", "left_leg");
 
-    private static void bakeCube(GeoModelData.Cube cube, float[] pivot,
+    private static void bakeCube(GeoModelData.Cube cube, Matrix4f boneMatrix, float[] pivot,
                                  int textureWidth, int textureHeight, List<Quad> out) {
         float inflate = cube.inflate();
         float x0 = cube.origin()[0] - inflate;
@@ -251,9 +348,9 @@ public final class HumanoidGeoModel {
 
             Vector3f[] positions = new Vector3f[4];
             for (int i = 0; i < 4; i++) {
-                positions[i] = toModelSpace(corners[i], rotation, cube, pivot);
+                positions[i] = toModelSpace(corners[i], rotation, boneMatrix, cube, pivot);
             }
-            out.add(new Quad(positions, u, v, faceNormal(direction, rotation)));
+            out.add(new Quad(positions, u, v, faceNormal(direction, rotation, boneMatrix)));
         }
     }
 
@@ -265,16 +362,21 @@ public final class HumanoidGeoModel {
      * facing the opposite way to a Minecraft entity, so the conversion is a 180-degree
      * turn about Y: both X and Z are negated. That lands the source's right arm on the
      * vanilla part at {@code -x} and puts back-of-body geometry behind the player. The
-     * per-cube rotation is applied in Bedrock space first, about the cube's own pivot.
+     * per-cube rotation is applied in Bedrock space first, about the cube's own pivot,
+     * then the bone chain's rotation about its pivots, still in Bedrock space, before the
+     * turn into model space.
      */
     private static Vector3f toModelSpace(Vector3f corner, Matrix4f rotation,
-                                         GeoModelData.Cube cube, float[] pivot) {
+                                         Matrix4f boneMatrix, GeoModelData.Cube cube, float[] pivot) {
         Vector3f p = new Vector3f(corner);
         if (rotation != null) {
             float[] cp = cube.pivot();
             p.sub(cp[0], cp[1], cp[2]);
             rotation.transformPosition(p);
             p.add(cp[0], cp[1], cp[2]);
+        }
+        if (boneMatrix != null) {
+            boneMatrix.transformPosition(p);
         }
         return new Vector3f(-p.x() - pivot[0], (24.0F - p.y()) - pivot[1], -p.z() - pivot[2]);
     }
@@ -300,10 +402,13 @@ public final class HumanoidGeoModel {
                 (float) Math.toRadians(-r[0]));
     }
 
-    private static Vector3f faceNormal(Direction direction, Matrix4f rotation) {
+    private static Vector3f faceNormal(Direction direction, Matrix4f rotation, Matrix4f boneMatrix) {
         Vector3f normal = new Vector3f(direction.getStepX(), direction.getStepY(), direction.getStepZ());
         if (rotation != null) {
             rotation.transformDirection(normal);
+        }
+        if (boneMatrix != null) {
+            boneMatrix.transformDirection(normal);
         }
         // toModelSpace negates all three axes, so the normal follows.
         return new Vector3f(-normal.x(), -normal.y(), -normal.z());
@@ -341,6 +446,12 @@ public final class HumanoidGeoModel {
             float swap = u0;
             u0 = u1;
             u1 = swap;
+        }
+        // toModelSpace also mirrors Z; an up or down face has its V along Z, so flip V too.
+        if (direction.getAxis() == Direction.Axis.Y) {
+            float swap = v0;
+            v0 = v1;
+            v1 = swap;
         }
         u[0] = u0;
         v[0] = v0;
