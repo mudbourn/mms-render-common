@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "info.mudbourn.mmsrendercommon.mixin.itemmodel",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ItemModelsMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
