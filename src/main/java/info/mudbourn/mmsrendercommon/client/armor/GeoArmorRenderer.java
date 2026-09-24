@@ -49,6 +49,7 @@ final class GeoArmorRenderer implements ArmorRenderer {
             new Segment(EquipmentSlot.CHEST, "armorBody", model -> model.body, 0.0F, 0.0F),
             new Segment(EquipmentSlot.CHEST, "armorLeftArm", model -> model.leftArm, -5.0F, 2.0F),
             new Segment(EquipmentSlot.CHEST, "armorRightArm", model -> model.rightArm, 5.0F, 2.0F),
+            new Segment(EquipmentSlot.LEGS, "armorLegsBody", model -> model.body, 0.0F, 0.0F),
             new Segment(EquipmentSlot.LEGS, "armorLeftLeg", model -> model.leftLeg, -2.0F, 12.0F),
             new Segment(EquipmentSlot.LEGS, "armorRightLeg", model -> model.rightLeg, 2.0F, 12.0F),
             new Segment(EquipmentSlot.FEET, "armorLeftBoot", model -> model.leftLeg, -2.0F, 12.0F),
@@ -65,9 +66,22 @@ final class GeoArmorRenderer implements ArmorRenderer {
     public void render(PoseStack poseStack, SubmitNodeCollector collector, ItemStack stack,
                        HumanoidRenderState state, EquipmentSlot slot, int light,
                        HumanoidModel<HumanoidRenderState> contextModel) {
-        GeoArmorDefinition definition = GeoAssets.definition(this.definition, GeoArmorDefinition.CODEC);
+        GeoArmorDefinition definition = definition();
+        if (definition != null) {
+            draw(definition, poseStack, collector, stack, state, slot, light, contextModel);
+        }
+    }
+
+    /** The definition this renderer draws, or null when its file is missing or invalid. */
+    GeoArmorDefinition definition() {
+        return GeoAssets.definition(this.definition, GeoArmorDefinition.CODEC);
+    }
+
+    void draw(GeoArmorDefinition definition, PoseStack poseStack, SubmitNodeCollector collector,
+              ItemStack stack, HumanoidRenderState state, EquipmentSlot slot, int light,
+              HumanoidModel<HumanoidRenderState> contextModel) {
         List<Segment> segments = SEGMENTS.stream().filter(segment -> segment.slot() == slot).toList();
-        if (definition == null || segments.isEmpty()) {
+        if (segments.isEmpty()) {
             return;
         }
         Entity wearer = wearer(state);

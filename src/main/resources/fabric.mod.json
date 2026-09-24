@@ -17,7 +17,8 @@
     "mms_render_common.cemrelay.mixins.json",
     "mms_render_common.duck.mixins.json",
     "mms_render_common.itemmodel.mixins.json",
-    "mms_render_common.geoholder.mixins.json"
+    "mms_render_common.geoholder.mixins.json",
+    "mms_render_common.geoarmor.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=0.16.0",
