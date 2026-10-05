@@ -36,6 +36,9 @@ public final class GeoAnimation implements BoneAnimator {
     /** A sound keyframe: the sound's id, played at a time in seconds with a volume and pitch. */
     public record SoundCue(float time, Identifier sound, float volume, float pitch) {}
 
+    /** A particle keyframe: the effect name written in the file, at a time in seconds. */
+    public record EffectCue(float time, String effect) {}
+
     private record Keyframe(float time, Molang.Expr[] pre, Molang.Expr[] post, Easing.Spec easing) {}
 
     private record Track(List<Keyframe> rotation, List<Keyframe> position, List<Keyframe> scale) {}
@@ -45,14 +48,16 @@ public final class GeoAnimation implements BoneAnimator {
     private final Loop loop;
     private final Map<String, Track> tracks;
     private final List<SoundCue> sounds;
+    private final List<EffectCue> effects;
 
     private GeoAnimation(String name, float length, Loop loop, Map<String, Track> tracks,
-                         List<SoundCue> sounds) {
+                         List<SoundCue> sounds, List<EffectCue> effects) {
         this.name = name;
         this.length = length;
         this.loop = loop;
         this.tracks = tracks;
         this.sounds = sounds;
+        this.effects = effects;
     }
 
     /** Parses the first animation in a Bedrock {@code animation.json} document. */
@@ -88,6 +93,11 @@ public final class GeoAnimation implements BoneAnimator {
         return this.sounds;
     }
 
+    /** Particle keyframes in time order. */
+    public List<EffectCue> effects() {
+        return this.effects;
+    }
+
     /** Whether a {@link Loop#PLAY_ONCE} animation has run past its end at this many seconds. */
     public boolean finished(float seconds) {
         return this.loop == Loop.PLAY_ONCE && seconds >= this.length;
@@ -111,6 +121,24 @@ public final class GeoAnimation implements BoneAnimator {
                 sampleChannel(track.rotation(), time, scope, 0.0F),
                 sampleChannel(track.position(), time, scope, 0.0F),
                 sampleChannel(track.scale(), time, scope, 1.0F)
+        );
+    }
+
+    /**
+     * The bone's pose at a point on the timeline in seconds, clamped to the animation's length
+     * and never wrapped, for callers that run their own loop and hold logic. Null when this
+     * animation does not touch the bone.
+     */
+    public BonePose sampleAt(String bone, float time, MolangScope scope) {
+        Track track = this.tracks.get(bone);
+        if (track == null) {
+            return null;
+        }
+        float clamped = Math.max(0.0F, Math.min(time, this.length));
+        return new BonePose(
+                sampleChannel(track.rotation(), clamped, scope, 0.0F),
+                sampleChannel(track.position(), clamped, scope, 0.0F),
+                sampleChannel(track.scale(), clamped, scope, 1.0F)
         );
     }
 
@@ -222,7 +250,8 @@ public final class GeoAnimation implements BoneAnimator {
                 ? animation.get("animation_length").getAsFloat()
                 : lastKeyframe;
         List<SoundCue> sounds = parseSounds(animation.getAsJsonObject("sound_effects"));
-        return new GeoAnimation(name, length, parseLoop(animation.get("loop")), tracks, sounds);
+        List<EffectCue> effects = parseEffects(animation.getAsJsonObject("particle_effects"));
+        return new GeoAnimation(name, length, parseLoop(animation.get("loop")), tracks, sounds, effects);
     }
 
     private static List<SoundCue> parseSounds(JsonObject effects) {
@@ -243,6 +272,21 @@ public final class GeoAnimation implements BoneAnimator {
         }
         sounds.sort((a, b) -> Float.compare(a.time(), b.time()));
         return sounds;
+    }
+
+    private static List<EffectCue> parseEffects(JsonObject effects) {
+        List<EffectCue> cues = new ArrayList<>();
+        if (effects == null) {
+            return cues;
+        }
+        for (Map.Entry<String, JsonElement> entry : effects.entrySet()) {
+            JsonElement value = entry.getValue();
+            if (value.isJsonObject() && value.getAsJsonObject().has("effect")) {
+                cues.add(new EffectCue(Float.parseFloat(entry.getKey()), value.getAsJsonObject().get("effect").getAsString()));
+            }
+        }
+        cues.sort((a, b) -> Float.compare(a.time(), b.time()));
+        return cues;
     }
 
     private static Loop parseLoop(JsonElement loop) {

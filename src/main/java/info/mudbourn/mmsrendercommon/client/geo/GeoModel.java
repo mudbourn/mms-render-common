@@ -109,6 +109,43 @@ public final class GeoModel {
         drawBones(pose, consumer, light, overlay, color, matrices(poses));
     }
 
+    /**
+     * Per-bone drawing choices: a hidden bone skips its own cubes and, unless it keeps its
+     * children, everything under it, as GeckoLib's {@code setHidden} does; light may be raised
+     * per bone, as for glowing parts, and a bone's light carries down to its children.
+     */
+    public interface BoneStyle {
+
+        boolean hidden(String bone);
+
+        default boolean keepsChildren(String bone) {
+            return false;
+        }
+
+        default int light(String bone, int light) {
+            return light;
+        }
+    }
+
+    /** Draws the model with the given bone poses, hiding and lighting bones as the style says. */
+    public void draw(PoseStack.Pose pose, VertexConsumer consumer, int light, int overlay, int color,
+                     Map<String, BonePose> poses, BoneStyle style) {
+        Matrix4f[] matrices = matrices(poses);
+        boolean[] childrenHidden = new boolean[this.bones.size()];
+        int[] lights = new int[this.bones.size()];
+        for (int i = 0; i < this.bones.size(); i++) {
+            Bone bone = this.bones.get(i);
+            boolean underHidden = bone.parent() >= 0 && childrenHidden[bone.parent()];
+            boolean hidden = style.hidden(bone.name());
+            childrenHidden[i] = underHidden || hidden && !style.keepsChildren(bone.name());
+            lights[i] = style.light(bone.name(), bone.parent() >= 0 ? lights[bone.parent()] : light);
+            if (underHidden || hidden || bone.quads().isEmpty()) {
+                continue;
+            }
+            drawBone(pose, consumer, lights[i], overlay, color, matrices[i], bone);
+        }
+    }
+
     /** Draws only the named bones and everything under them, posed as {@link #draw} poses them. */
     public void drawSubtrees(PoseStack.Pose pose, VertexConsumer consumer, int light, int overlay, int color,
                              Map<String, BonePose> poses, Collection<String> roots) {
@@ -162,6 +199,28 @@ public final class GeoModel {
                 .scale(16.0F);
     }
 
+    /**
+     * A bone's full transform under the given poses, in block units: the matrix {@link #draw}
+     * multiplies the bone's own cubes by, so anything drawn under it moves with the bone exactly
+     * as its cubes do. Null when there is no such bone.
+     */
+    public Matrix4f boneMatrix(String bone, Map<String, BonePose> poses) {
+        Integer index = this.indexByName.get(BoneAnimator.canonicalBone(bone));
+        if (index == null) {
+            return null;
+        }
+        return new Matrix4f()
+                .scale(1.0F / 16.0F)
+                .mul(matrices(poses)[index])
+                .scale(16.0F);
+    }
+
+    /** A bone's pivot in model pixels as baked, X negated as GeckoLib bakes it, or null when there is no such bone. */
+    public Vector3f pivot(String bone) {
+        Integer index = this.indexByName.get(BoneAnimator.canonicalBone(bone));
+        return index == null ? null : new Vector3f(this.bones.get(index).pivot());
+    }
+
     private Matrix4f[] matrices(Map<String, BonePose> poses) {
         return poses.isEmpty() ? this.restMatrices : boneMatrices(this.bones, poses);
     }
@@ -174,23 +233,28 @@ public final class GeoModel {
     private void drawBones(PoseStack.Pose pose, VertexConsumer consumer, int light, int overlay, int color,
                            Matrix4f[] matrices, boolean[] shown) {
         for (int i = 0; i < this.bones.size(); i++) {
-            List<Quad> quads = this.bones.get(i).quads();
-            if (quads.isEmpty() || shown != null && !shown[i]) {
+            Bone bone = this.bones.get(i);
+            if (bone.quads().isEmpty() || shown != null && !shown[i]) {
                 continue;
             }
-            PoseStack.Pose bonePose = pose.copy();
-            bonePose.scale(1.0F / 16.0F, 1.0F / 16.0F, 1.0F / 16.0F);
-            bonePose.mulPose(matrices[i]);
-            for (Quad quad : quads) {
-                for (int corner = 0; corner < 4; corner++) {
-                    Vector3f p = quad.positions()[corner];
-                    consumer.addVertex(bonePose, p.x(), p.y(), p.z())
-                            .setColor(color)
-                            .setUv(quad.u()[corner], quad.v()[corner])
-                            .setOverlay(overlay)
-                            .setLight(light)
-                            .setNormal(bonePose, quad.normal().x(), quad.normal().y(), quad.normal().z());
-                }
+            drawBone(pose, consumer, light, overlay, color, matrices[i], bone);
+        }
+    }
+
+    private static void drawBone(PoseStack.Pose pose, VertexConsumer consumer, int light, int overlay, int color,
+                                 Matrix4f matrix, Bone bone) {
+        PoseStack.Pose bonePose = pose.copy();
+        bonePose.scale(1.0F / 16.0F, 1.0F / 16.0F, 1.0F / 16.0F);
+        bonePose.mulPose(matrix);
+        for (Quad quad : bone.quads()) {
+            for (int corner = 0; corner < 4; corner++) {
+                Vector3f p = quad.positions()[corner];
+                consumer.addVertex(bonePose, p.x(), p.y(), p.z())
+                        .setColor(color)
+                        .setUv(quad.u()[corner], quad.v()[corner])
+                        .setOverlay(overlay)
+                        .setLight(light)
+                        .setNormal(bonePose, quad.normal().x(), quad.normal().y(), quad.normal().z());
             }
         }
     }
