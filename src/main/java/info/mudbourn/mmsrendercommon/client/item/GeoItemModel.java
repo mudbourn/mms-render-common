@@ -15,7 +15,6 @@ import info.mudbourn.mmsrendercommon.client.geo.GeoTexture;
 import info.mudbourn.mmsrendercommon.client.geo.MolangScope;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.item.ItemModel;
 import net.minecraft.client.renderer.item.ItemModelResolver;
@@ -28,6 +27,7 @@ import net.minecraft.client.resources.model.ModelBaker;
 import net.minecraft.client.resources.model.ResolvableModel;
 import net.minecraft.client.resources.model.ResolvedModel;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.HumanoidArm;
@@ -35,6 +35,7 @@ import net.minecraft.world.entity.ItemOwner;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
+import org.joml.Matrix4fc;
 import org.joml.Vector3fc;
 
 import java.util.Map;
@@ -110,7 +111,7 @@ public final class GeoItemModel implements ItemModel {
         }
 
         @Override
-        public ItemModel bake(ItemModel.BakingContext context) {
+        public ItemModel bake(ItemModel.BakingContext context, Matrix4fc transformation) {
             ModelBaker baker = context.blockModelBaker();
             ResolvedModel resolved = baker.getModel(this.base);
             ModelRenderProperties properties = ModelRenderProperties.fromResolvedModel(
@@ -126,6 +127,7 @@ public final class GeoItemModel implements ItemModel {
     private record Frame(GeoModel model,
                          RenderType renderType,
                          RenderType emissiveType,
+                         RenderType glintType,
                          Map<String, BonePose> poses,
                          Map<String, Identifier> attachments,
                          GeoContext context) {}
@@ -133,17 +135,17 @@ public final class GeoItemModel implements ItemModel {
     private static final SpecialModelRenderer<Frame> RENDERER = new SpecialModelRenderer<>() {
 
         @Override
-        public void submit(Frame frame, ItemDisplayContext context, PoseStack poseStack,
+        public void submit(Frame frame, PoseStack poseStack,
                            SubmitNodeCollector collector, int light, int overlay,
                            boolean glint, int outline) {
             poseStack.pushPose();
             poseStack.translate(0.5F, 0.51F, 0.5F);
             submitGeometry(frame, poseStack, collector, frame.renderType(), light, overlay);
             if (frame.emissiveType() != null) {
-                submitGeometry(frame, poseStack, collector, frame.emissiveType(), LightTexture.FULL_BRIGHT, overlay);
+                submitGeometry(frame, poseStack, collector, frame.emissiveType(), LightCoordsUtil.FULL_BRIGHT, overlay);
             }
             if (glint) {
-                submitGeometry(frame, poseStack, collector, RenderTypes.entityGlint(), light, overlay);
+                submitGeometry(frame, poseStack, collector, frame.glintType(), light, overlay);
             }
             GeoAnimations.submitAttachments(
                     frame.attachments(),
@@ -208,11 +210,12 @@ public final class GeoItemModel implements ItemModel {
         Identifier texture = this.source.texture().at(ticks);
         RenderType renderType = this.source.translucent()
                 ? RenderTypes.entityTranslucent(texture)
-                : RenderTypes.entityCutoutNoCull(texture);
+                : RenderTypes.entityCutout(texture);
         RenderType emissiveType = this.source.emissiveTexture()
                 .map(emissive -> RenderTypes.entityTranslucentEmissive(emissive.at(ticks)))
                 .orElse(null);
-        Frame frame = new Frame(model, renderType, emissiveType, poses, this.source.attachments(), geoContext);
+        RenderType glintType = RenderTypes.entitySolidGlint(texture);
+        Frame frame = new Frame(model, renderType, emissiveType, glintType, poses, this.source.attachments(), geoContext);
         layer.setupSpecialModel(RENDERER, frame);
         this.properties.applyToLayer(layer, context);
     }

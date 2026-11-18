@@ -1,5 +1,5 @@
 plugins {
-    id 'net.fabricmc.fabric-loom-remap' version '1.17.14'
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
 version = project.mod_version
@@ -16,18 +16,17 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:0.141.4+1.21.11"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = 25
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
     withSourcesJar()
 }
 
@@ -52,11 +51,11 @@ jar {
 // time it is touched at runtime, as a class-load crash in production. Fail the
 // build instead.
 def checkMixinPackages = tasks.register('checkMixinPackages', Exec) {
-    dependsOn tasks.named('remapJar')
+    dependsOn tasks.named('jar')
     doFirst {
         commandLine 'python3',
                 "$projectDir/gradle/scripts/check-mixin-packages.py",
-                tasks.named('remapJar').get().archiveFile.get().asFile
+                tasks.named('jar').get().archiveFile.get().asFile
     }
 }
 

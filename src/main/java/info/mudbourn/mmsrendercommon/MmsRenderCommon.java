@@ -9,6 +9,6 @@ public final class MmsRenderCommon implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        PayloadTypeRegistry.playS2C().register(GeoTriggerPayload.TYPE, GeoTriggerPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(GeoTriggerPayload.TYPE, GeoTriggerPayload.CODEC);
     }
 }

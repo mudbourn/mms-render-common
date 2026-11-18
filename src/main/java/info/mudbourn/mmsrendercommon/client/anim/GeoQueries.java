@@ -54,7 +54,7 @@ public final class GeoQueries {
             scope.set("limb_swing", living.walkAnimation.position(partialTick))
                     .set("limb_swing_amount", living.walkAnimation.speed(partialTick))
                     .set("head_y_rotation", Mth.wrapDegrees(headYaw - bodyYaw))
-                    .set("swing_progress", living.getAttackAnim(partialTick))
+                    .set("swing_progress", living.getSwingAnimation(partialTick))
                     .set("is_fall_flying", flag(living.isFallFlying()))
                     .set("is_swimming", flag(living.isVisuallySwimming()))
                     .set("is_using_item", flag(living.isUsingItem()))

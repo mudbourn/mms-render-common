@@ -15,7 +15,6 @@ import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.AbstractClientPlayer;
-import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
 import net.minecraft.client.renderer.rendertype.RenderType;
@@ -23,6 +22,7 @@ import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
+import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.PlayerModelType;
@@ -114,7 +114,7 @@ final class GeoArmorRenderer implements ArmorRenderer {
         long ticks = wearer != null ? wearer.tickCount : (long) state.ageInTicks;
         Identifier texture = definition.texture(slim).at(ticks);
         RenderType renderType = definition.translucent()
-                ? RenderTypes.armorTranslucent(texture)
+                ? RenderTypes.entityTranslucent(texture)
                 : RenderTypes.armorCutoutNoCull(texture);
         int color = ARGB.opaque(DyedItemColor.getOrDefault(stack, -1));
         Map<String, Identifier> attachments = new HashMap<>(definition.attachments());
@@ -131,11 +131,11 @@ final class GeoArmorRenderer implements ArmorRenderer {
                 model,
                 poses,
                 bones,
-                LightTexture.FULL_BRIGHT,
+                LightCoordsUtil.FULL_BRIGHT,
                 -1
         ));
         if (stack.hasFoil()) {
-            submit(collector, poseStack, RenderTypes.armorEntityGlint(), model, poses, bones, light, -1);
+            submit(collector, poseStack, RenderTypes.armorCutoutNoCullGlint(texture), model, poses, bones, light, -1);
         }
         GeoAnimations.submitAttachments(
                 attachments,

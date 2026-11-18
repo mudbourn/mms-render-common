@@ -20,7 +20,7 @@ public final class MmsRenderCommonClient implements ClientModInitializer {
                 (payload, context) -> GeoAnimations.receive(payload)
         );
         ResourceManagerReloadListener clearAssets = resources -> GeoAssets.clear();
-        ResourceLoader.get(PackType.CLIENT_RESOURCES).registerReloader(
+        ResourceLoader.get(PackType.CLIENT_RESOURCES).registerReloadListener(
                 Identifier.fromNamespaceAndPath("mms_render_common", "geo_assets"),
                 clearAssets
         );
