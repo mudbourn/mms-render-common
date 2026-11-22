@@ -3,7 +3,7 @@
   "id": "mms_render_common",
   "version": "${version}",
   "name": "MMS Render Common",
-  "description": "Shared render infrastructure for the MMS mods: animated Bedrock geo items and armor, synced geo animation triggers, the EMF/CEM layer pose relay, and the first-person self duck.",
+  "description": "Shared render infrastructure for the MMS mods: animated Bedrock geo items and armor, synced geo animation triggers, the EMF/CEM layer pose relay.",
   "environment": "*",
   "entrypoints": {
     "main": [
@@ -15,7 +15,6 @@
   },
   "mixins": [
     "mms_render_common.cemrelay.mixins.json",
-    "mms_render_common.duck.mixins.json",
     "mms_render_common.itemmodel.mixins.json",
     "mms_render_common.geoholder.mixins.json",
     "mms_render_common.geoarmor.mixins.json"

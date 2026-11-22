@@ -2,7 +2,6 @@ package info.mudbourn.mmsrendercommon.mixin.geoarmor;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import info.mudbourn.mmsrendercommon.client.armor.GeoArmor;
-import info.mudbourn.mmsrendercommon.duck.FirstPersonSelfDuck;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
@@ -32,7 +31,7 @@ public abstract class HumanoidArmorLayerMixin {
             return;
         }
         Object parent = ((RenderLayer<?, ?>) (Object) this).getParentModel();
-        if (!FirstPersonSelfDuck.hidesHeadPiece(state, slot) && parent instanceof HumanoidModel<?> model) {
+        if (parent instanceof HumanoidModel<?> model) {
             GeoArmor.renderByAsset(
                     poseStack,
                     collector,
