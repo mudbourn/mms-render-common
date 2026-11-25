@@ -70,6 +70,9 @@ public final class GeoAssets {
             try {
                 return codec.parse(JsonOps.INSTANCE, readJson(resources(), id))
                         .resultOrPartial(error -> LOGGER.warn("Invalid definition {}: {}", id, error));
+            } catch (FileNotFoundException missing) {
+                // Callers probe for optional definitions, like a geo model per vanilla armor material.
+                return Optional.empty();
             } catch (Exception exception) {
                 LOGGER.warn("Could not load definition {}", id, exception);
                 return Optional.empty();
