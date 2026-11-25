@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "info.mudbourn.mmsrendercommon.mixin.legacy",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "ModelAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
