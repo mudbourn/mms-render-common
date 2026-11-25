@@ -19,7 +19,6 @@ import org.joml.Matrix4f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -27,7 +26,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 
 /**
- * Client-side animation state for geo items and geo armor, and the hooks that steer it.
+ * Client-side animation state for geo items, geo armor and geo entities, and the hooks that steer it.
  *
  * <p>Each holder keeps one {@link AnimationController} per slot and model, so the first and
  * third person views of one held item share a controller while two holders of the same item
@@ -35,7 +34,8 @@ import java.util.WeakHashMap;
  * {@link GeoDriver}s and {@link GeoAttachment}s definitions name. {@link #trigger} plays a
  * one-off animation from client code; the server does the same through {@code GeoTriggers},
  * whose packets land in {@link #receive}. A trigger starts the next time the item in that slot
- * is drawn and is dropped if it is not drawn within a second. Holders are held weakly.
+ * is drawn and is dropped if it is not drawn within a second. A trigger with no slot plays on a
+ * geo entity's own model. Holders are held weakly.
  */
 public final class GeoAnimations {
 
@@ -81,8 +81,18 @@ public final class GeoAnimations {
     public static void trigger(Entity holder, EquipmentSlot slot, String animation) {
         ClientLevel level = Minecraft.getInstance().level;
         long now = level == null ? 0L : level.getGameTime();
-        TRIGGERS.computeIfAbsent(holder, key -> new EnumMap<>(EquipmentSlot.class))
+        TRIGGERS.computeIfAbsent(holder, key -> new HashMap<>())
                 .put(slot, new Trigger(nextSerial++, animation, now));
+    }
+
+    /** Plays a one-off animation, by name, on a geo entity's own model. */
+    public static void trigger(Entity entity, String animation) {
+        trigger(entity, null, animation);
+    }
+
+    /** Stops the one-off animation playing on a geo entity's own model. */
+    public static void stop(Entity entity) {
+        trigger(entity, null, "");
     }
 
     /** Stops the one-off animation playing on the geo item or armor in a holder's slot. */
@@ -95,7 +105,7 @@ public final class GeoAnimations {
         ClientLevel level = Minecraft.getInstance().level;
         Entity holder = level == null ? null : level.getEntity(payload.entityId());
         if (holder != null) {
-            trigger(holder, payload.slot(), payload.animation());
+            trigger(holder, payload.slot().orElse(null), payload.animation());
         }
     }
 
@@ -111,6 +121,16 @@ public final class GeoAnimations {
      */
     public static Map<String, BonePose> animate(GeoAnimationSpec spec, Identifier model, Object owner,
                                                 GeoContext context, MolangScope scope) {
+        return animate(spec, model, owner, context, scope, null);
+    }
+
+    /**
+     * Advances the animation of one drawn geo as {@link #animate(GeoAnimationSpec, Identifier,
+     * Object, GeoContext, MolangScope)} does, asking {@code fallback} for the base animation after
+     * the spec's driver and {@code states} rules and before {@code idle}.
+     */
+    public static Map<String, BonePose> animate(GeoAnimationSpec spec, Identifier model, Object owner,
+                                                GeoContext context, MolangScope scope, GeoDriver fallback) {
         Map<String, GeoAnimation> animations = spec.animations().map(GeoAssets::animations).orElse(Map.of());
         if (animations.isEmpty()) {
             return Map.of();
@@ -125,9 +145,9 @@ public final class GeoAnimations {
         Instance instance = INSTANCES.computeIfAbsent(holder == null ? owner : holder, key -> new HashMap<>())
                 .computeIfAbsent(stateKey(context, model), key -> new Instance(spec.transitionTicks()));
         AnimationController controller = instance.controller;
-        takeTrigger(instance, holder, context.slot(), animations, gameTime, nowTicks, scope);
+        takeTrigger(instance, holder, context, animations, gameTime, nowTicks, scope);
 
-        String baseName = baseAnimation(spec, context, scope);
+        String baseName = baseAnimation(spec, context, scope, fallback);
         controller.play(baseName == null ? null : animations.get(baseName), nowTicks, scope);
         Map<String, BonePose> poses = controller.sample(nowTicks, scope);
         playCues(controller, holder, level);
@@ -155,14 +175,14 @@ public final class GeoAnimations {
         }
     }
 
-    private static void takeTrigger(Instance instance, Entity holder, EquipmentSlot slot,
+    private static void takeTrigger(Instance instance, Entity holder, GeoContext context,
                                     Map<String, GeoAnimation> animations, long gameTime,
                                     float nowTicks, MolangScope scope) {
-        if (holder == null || slot == null) {
+        if (holder == null || context.slot() == null && context.display() != null) {
             return;
         }
         Map<EquipmentSlot, Trigger> pending = TRIGGERS.get(holder);
-        Trigger trigger = pending == null ? null : pending.get(slot);
+        Trigger trigger = pending == null ? null : pending.get(context.slot());
         if (trigger == null || trigger.serial() <= instance.takenTrigger) {
             return;
         }
@@ -180,7 +200,8 @@ public final class GeoAnimations {
         }
     }
 
-    private static String baseAnimation(GeoAnimationSpec spec, GeoContext context, MolangScope scope) {
+    private static String baseAnimation(GeoAnimationSpec spec, GeoContext context, MolangScope scope,
+                                        GeoDriver fallback) {
         if (spec.driver().isPresent()) {
             GeoDriver driver = DRIVERS.get(spec.driver().get());
             if (driver == null) {
@@ -199,7 +220,8 @@ public final class GeoAnimations {
                 return state.animation();
             }
         }
-        return spec.idle().orElse(null);
+        String picked = fallback == null ? null : fallback.animation(context);
+        return picked != null ? picked : spec.idle().orElse(null);
     }
 
     private static String stateKey(GeoContext context, Identifier model) {

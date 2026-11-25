@@ -8,6 +8,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Server-side API for playing one-off geo animations, the counterpart of GeckoLib's
@@ -15,7 +16,7 @@ import java.util.List;
  *
  * <p>A trigger names an animation in the animation file of the geo item or geo armor the holder
  * has in a slot: {@code MAINHAND} or {@code OFFHAND} for a held item, an armor slot for worn
- * armor. It reaches the holder, if a player, and every player tracking the holder, provided their
+ * armor. The slotless calls play on a geo entity's own model instead. It reaches the holder, if a player, and every player tracking the holder, provided their
  * client runs this mod. Each client plays it over the item's base animation the next time that
  * item is drawn; a client that does not draw it within a second drops it. Calls on a client-side
  * entity do nothing; use {@code GeoAnimations.trigger} on the client instead.
@@ -27,12 +28,22 @@ public final class GeoTriggers {
 
     /** Plays a one-off animation, by name, on the geo item in the holder's slot. */
     public static void trigger(Entity holder, EquipmentSlot slot, String animation) {
-        send(holder, new GeoTriggerPayload(holder.getId(), slot, animation));
+        send(holder, new GeoTriggerPayload(holder.getId(), Optional.of(slot), animation));
     }
 
     /** Stops the one-off animation playing on the geo item in the holder's slot. */
     public static void stop(Entity holder, EquipmentSlot slot) {
-        send(holder, new GeoTriggerPayload(holder.getId(), slot, ""));
+        send(holder, new GeoTriggerPayload(holder.getId(), Optional.of(slot), ""));
+    }
+
+    /** Plays a one-off animation, by name, on a geo entity's own model. */
+    public static void trigger(Entity entity, String animation) {
+        send(entity, new GeoTriggerPayload(entity.getId(), Optional.empty(), animation));
+    }
+
+    /** Stops the one-off animation playing on a geo entity's own model. */
+    public static void stop(Entity entity) {
+        send(entity, new GeoTriggerPayload(entity.getId(), Optional.empty(), ""));
     }
 
     private static void send(Entity holder, GeoTriggerPayload payload) {

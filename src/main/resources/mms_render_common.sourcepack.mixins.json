@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "info.mudbourn.mmsrendercommon.mixin.sourcepack",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "PackRepositoryMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
