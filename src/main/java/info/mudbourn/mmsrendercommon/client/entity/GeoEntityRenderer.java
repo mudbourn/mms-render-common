@@ -17,6 +17,7 @@ import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 
@@ -175,5 +176,17 @@ public class GeoEntityRenderer<T extends LivingEntity>
             case HEAD -> ItemDisplayContext.HEAD;
             default -> ItemDisplayContext.FIXED;
         };
+    }
+
+    // Shows a mob's name tag only the way vanilla mob renderers do.
+    @Override
+    protected boolean shouldShowName(T entity, double distanceSquared) {
+        if (!super.shouldShowName(entity, distanceSquared)) {
+            return false;
+        }
+        if (!(entity instanceof Mob mob)) {
+            return true;
+        }
+        return mob.shouldShowName() || mob.hasCustomName() && mob == this.entityRenderDispatcher.crosshairPickEntity;
     }
 }
