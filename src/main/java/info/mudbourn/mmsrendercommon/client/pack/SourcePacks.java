@@ -1,6 +1,7 @@
 package info.mudbourn.mmsrendercommon.client.pack;
 
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.resources.Identifier;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.packs.FilePackResources;
 import net.minecraft.server.packs.PackLocationInfo;
@@ -16,12 +17,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,6 +52,7 @@ public final class SourcePacks implements RepositorySource {
     public static final SourcePacks INSTANCE = new SourcePacks();
 
     private static final Set<String> NAMESPACES = ConcurrentHashMap.newKeySet();
+    private static final Map<Path, Set<String>> JARS = new ConcurrentHashMap<>();
 
     private SourcePacks() {
     }
@@ -63,8 +67,35 @@ public final class SourcePacks implements RepositorySource {
         return FabricLoader.getInstance().getConfigDir().resolve("mms_render_common").resolve("sources");
     }
 
+    /**
+     * The bytes of a file in an installed jar whose namespace was accepted, found by its path
+     * ignoring case, since an identifier path is lower case. Null when no jar holds it.
+     */
+    public static byte[] read(Identifier file) {
+        for (Map.Entry<Path, Set<String>> jar : JARS.entrySet()) {
+            if (!jar.getValue().contains(file.getNamespace())) {
+                continue;
+            }
+            try (ZipFile zip = new ZipFile(jar.getKey().toFile())) {
+                Enumeration<? extends ZipEntry> entries = zip.entries();
+                while (entries.hasMoreElements()) {
+                    ZipEntry entry = entries.nextElement();
+                    if (entry.getName().equalsIgnoreCase(file.getPath())) {
+                        try (InputStream stream = zip.getInputStream(entry)) {
+                            return stream.readAllBytes();
+                        }
+                    }
+                }
+            } catch (IOException exception) {
+                LOGGER.warn("Could not read {} from {}", file, jar.getKey(), exception);
+            }
+        }
+        return null;
+    }
+
     @Override
     public void loadPacks(Consumer<Pack> result) {
+        JARS.clear();
         if (NAMESPACES.isEmpty()) {
             return;
         }
@@ -79,6 +110,7 @@ public final class SourcePacks implements RepositorySource {
         for (Path jar : candidates) {
             Set<String> namespaces = acceptedNamespaces(jar);
             if (!namespaces.isEmpty()) {
+                JARS.put(jar, namespaces);
                 result.accept(pack(jar, namespaces));
                 LOGGER.info("Reading {} from {}", namespaces, jar.getFileName());
             }

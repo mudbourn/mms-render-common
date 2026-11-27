@@ -2,12 +2,14 @@ package info.mudbourn.mmsrendercommon.client.geo;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import info.mudbourn.mmsrendercommon.client.pack.SourcePacks;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.ResourceManager;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -79,8 +81,19 @@ public final class GeoModel {
         return GeoAssets.model(geo);
     }
 
-    /** Reads, parses and bakes a Bedrock geo without caching. */
+    /**
+     * Reads and bakes a model without caching: a Bedrock geo, or when the path ends in
+     * {@code .class}, the {@code createBodyLayer()} of that class file in an installed source
+     * jar, read through {@link JavaModelReader}.
+     */
     public static GeoModel read(ResourceManager resources, Identifier geo) throws IOException {
+        if (geo.getPath().endsWith(".class")) {
+            byte[] classFile = SourcePacks.read(geo);
+            if (classFile == null) {
+                throw new FileNotFoundException(geo.toString());
+            }
+            return bake(JavaModelReader.read(classFile));
+        }
         return bake(GeoModelData.parse(GeoAssets.readObject(resources, geo)));
     }
 

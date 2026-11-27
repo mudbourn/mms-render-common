@@ -54,6 +54,7 @@ public class GeoEntityRenderer<T extends LivingEntity>
         addLayer(GeoTextureLayer.base(this));
         addLayer(GeoTextureLayer.glow(this));
         addLayer(new GeoHeldItemLayer(this));
+        addLayer(new GeoArmorLayer(this, context));
     }
 
     /** The definition this renderer draws, or null when its file is missing or invalid. */
@@ -77,6 +78,7 @@ public class GeoEntityRenderer<T extends LivingEntity>
         if (state.model == null) {
             state.poses = Map.of();
             state.heldItems.clear();
+            state.armor.clear();
             return;
         }
 
@@ -90,6 +92,7 @@ public class GeoEntityRenderer<T extends LivingEntity>
                 scope,
                 presetDriver(definition, partialTick)
         ));
+        definition.restRotations().forEach((bone, rotation) -> turn(poses, bone, rotation));
         definition.headBone().ifPresent(bone -> lookWith(poses, bone, state.xRot, state.yRot));
         state.poses = poses;
 
@@ -102,6 +105,11 @@ public class GeoEntityRenderer<T extends LivingEntity>
             );
             this.itemModelResolver.updateForLiving(item, entity.getItemBySlot(slot), displayContext(slot), entity);
         }
+
+        state.armor.keySet().retainAll(definition.armorBones().keySet());
+        definition.armorBones().forEach(
+                (bone, target) -> state.armor.put(bone, entity.getItemBySlot(target.slot()))
+        );
     }
 
     @Override
@@ -157,6 +165,16 @@ public class GeoEntityRenderer<T extends LivingEntity>
             }
             return null;
         };
+    }
+
+    private static void turn(Map<String, BonePose> poses, String bone, List<Float> degrees) {
+        BonePose animated = poses.getOrDefault(bone, BonePose.REST);
+        float[] rotation = animated.rotation();
+        poses.put(bone, new BonePose(
+                new float[] {rotation[0] + degrees.get(0), rotation[1] + degrees.get(1), rotation[2] + degrees.get(2)},
+                animated.position(),
+                animated.scale()
+        ));
     }
 
     private static void lookWith(Map<String, BonePose> poses, String bone, float pitch, float yaw) {

@@ -5,6 +5,7 @@ import info.mudbourn.mmsrendercommon.client.geo.BonePose;
 import info.mudbourn.mmsrendercommon.client.geo.GeoModel;
 import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,4 +30,7 @@ public class GeoEntityRenderState extends LivingEntityRenderState {
 
     /** The items drawn on bones, keyed by bone name. */
     public final Map<String, ItemStackRenderState> heldItems = new HashMap<>();
+
+    /** The armor drawn on bones, keyed by bone name. */
+    public final Map<String, ItemStack> armor = new HashMap<>();
 }
